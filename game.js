@@ -41,11 +41,11 @@ const S = {
 };
 
 // ---------- physics ----------
-const engine = Engine.create(); engine.gravity.y = 1.7;
+const engine = Engine.create(); engine.gravity.y = 1.25;
 const world = engine.world;
 
-// pot geometry
-const POT = { x:VW/2, rimY:560, floorY:740, innerHalf:96, wallThk:24, hookX:VW/2, hookY:150, ropeLen:410 };
+// pot geometry (lower + wider mouth so arcs drop in easily)
+const POT = { x:VW/2, rimY:610, floorY:770, innerHalf:112, wallThk:22, hookX:VW/2, hookY:150, ropeLen:460 };
 const counterY = 1060;
 const loader = { x:VW/2, y:1165 };
 
@@ -59,7 +59,24 @@ function buildStatics(){
   counter   = Bodies.rectangle(VW/2, counterY+60, VW+200, 120, {isStatic:true,friction:0.9});
   const lb = Bodies.rectangle(-40, VH/2, 80, VH*2, {isStatic:true});
   const rb = Bodies.rectangle(VW+40, VH/2, 80, VH*2, {isStatic:true});
+  leftWall.isPot=rightWall.isPot=potFloor.isPot=true;
   Composite.add(world, [leftWall,rightWall,potFloor,counter,lb,rb]);
+  // ONE-WAY pot: ingredients moving up while still below the rim pass through the
+  // pot floor/walls and the existing stack; once inside (or descending) they collide & settle.
+  Matter.Events.on(engine,'collisionStart', ev=>{
+    for(const pair of ev.pairs){
+      const a=pair.bodyA, b=pair.bodyB;
+      const ingA=a.plugin&&a.plugin.it, ingB=b.plugin&&b.plugin.it;
+      const belowMouth = (body)=> body.position.y > POT.rimY+6;
+      if((a.isPot&&ingB)||(b.isPot&&ingA)){
+        const ing = ingA? a : b;
+        if(ing.velocity.y < 0.3 && belowMouth(ing)) pair.isActive=false; // rising & below rim → pass
+      } else if(ingA&&ingB){
+        const riser = (a.velocity.y<-2 && belowMouth(a)) ? a : (b.velocity.y<-2 && belowMouth(b)) ? b : null;
+        if(riser) pair.isActive=false; // an incoming rising piece passes through the stack
+      }
+    }
+  });
 }
 
 // ---------- game state ----------
@@ -141,20 +158,23 @@ cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move)
 cv.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up,{passive:false});
 
 function aimVector(){
-  // pull back from loader; fling toward where pull points away
-  let dx = G.aimStart.x - G.aimNow.x, dy = G.aimStart.y - G.aimNow.y;
-  const mag = Math.hypot(dx,dy), max=260;
+  // DRAG-toward-target: throw in the direction you drag from the loader (full-screen room)
+  let dx = G.aimNow.x - G.aimStart.x, dy = G.aimNow.y - G.aimStart.y;
+  const mag = Math.hypot(dx,dy), max=360;
   if(mag>max){ dx=dx/mag*max; dy=dy/mag*max; }
   return {x:dx, y:dy, mag:Math.min(mag,max)};
 }
+const LAUNCH_K = 0.087;   // calibrated: comfortable drag arcs into the pot
+let TRAJ_G = 0.49;        // matches measured matter gravity (rise=918 @ vy=30)
 function launch(){
   const v = aimVector();
-  if(v.mag < 26){ return; } // too small, ignore
+  if(v.mag < 12){ return; } // accidental tap
+  if(v.y > -4){ return; }    // must throw upward toward the pot, not down
   const it = G.current; spawnNext();
-  const b = Bodies.rectangle(loader.x, loader.y, 78, 96, {restitution:0.08, friction:0.7, frictionStatic:1, chamfer:{radius:14}, density:0.0016});
-  b.plugin = { it, judged:false, slow:0, scored:false, born:G.t };
+  const b = Bodies.rectangle(loader.x, loader.y-30, 78, 96, {restitution:0.08, friction:0.7, frictionStatic:1, chamfer:{radius:14}, density:0.0016});
+  b.plugin = { it, judged:false, slow:0, scored:false, counted:false, born:G.t };
   Composite.add(world, b);
-  Body.setVelocity(b, { x:v.x*0.165, y:v.y*0.165 });
+  Body.setVelocity(b, { x:v.x*LAUNCH_K, y:v.y*LAUNCH_K });
   Body.setAngularVelocity(b, (Math.random()-0.5)*0.08);
   G.ingredients.push(b);
   G.shots++;
@@ -313,10 +333,12 @@ function drawLoader(){
     // bands
     ctx.strokeStyle='#5A8C3A'; ctx.lineWidth=9;
     ctx.beginPath(); ctx.moveTo(loader.x-44,loader.y); ctx.lineTo(G.aimNow.x,G.aimNow.y); ctx.moveTo(loader.x+44,loader.y); ctx.lineTo(G.aimNow.x,G.aimNow.y); ctx.stroke();
-    // trajectory dots
-    let px=loader.x, py=loader.y, vx=v.x*0.165, vy=v.y*0.165;
-    ctx.fillStyle='rgba(28,23,20,.5)';
-    for(let i=0;i<26;i++){ px+=vx; py+=vy; vy+=1.7*0.166; if(i%2===0){ctx.beginPath();ctx.arc(px,py,4-i*0.07,0,6.28);ctx.fill();} if(py>VH)break; }
+    // trajectory dots (only when aiming upward)
+    if(v.y < -8){
+      let px=loader.x, py=loader.y-30, vx=v.x*LAUNCH_K, vy=v.y*LAUNCH_K;
+      ctx.fillStyle='rgba(28,23,20,.55)';
+      for(let i=0;i<40;i++){ px+=vx; py+=vy; vy+=TRAJ_G; if(i%2===0){ctx.beginPath();ctx.arc(px,py,5-i*0.07,0,6.28);ctx.fill();} if(py>VH||px<0||px>VW)break; }
+    }
     // dragged piece
     drawCard(G.aimNow.x,G.aimNow.y,G.current,1);
   } else {
