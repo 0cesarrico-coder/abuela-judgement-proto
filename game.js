@@ -45,7 +45,7 @@ const engine = Engine.create(); engine.gravity.y = 1.25;
 const world = engine.world;
 
 // pot geometry (lower + wider mouth so arcs drop in easily)
-const POT = { x:VW/2, rimY:610, floorY:770, innerHalf:112, wallThk:22, hookX:VW/2, hookY:150, ropeLen:460 };
+const POT = { x:VW/2, rimY:620, floorY:780, innerHalf:128, wallThk:22, hookX:VW/2, hookY:150, ropeLen:470 };
 const counterY = 1060;
 const loader = { x:VW/2, y:1165 };
 
@@ -185,7 +185,7 @@ function launch(){
 function setMood(m){ G.abuelaMood=m; G.moodT=0; }
 function judge(b){
   const p=b.plugin; p.judged=true;
-  const inX = Math.abs(b.position.x - G.potX) < POT.innerHalf+18;
+  const inX = Math.abs(b.position.x - G.potX) < POT.innerHalf+34;
   const inY = b.position.y < POT.floorY+24 && b.position.y > POT.rimY-90;
   if(inX && inY){
     p.scored=true; p.counted=true;
@@ -223,8 +223,11 @@ function loop(now){
   G.t++;
   if(G.hitstop>0){ G.hitstop--; } else {
     const ts = G.slowmo;
-    // swing servo: amplitude grows slightly with score
-    if(G.state==='play'){ G.swingAmp = 20 + Math.min(G.score/120, 70); G.swingSpd = 0.016 + Math.min(G.score/200000,0.01); }
+    // DIFFICULTY RAMP: pot starts almost still (easy first level) and grows slowly with Sazón.
+    if(G.state==='play'){
+      G.swingAmp = 3 + Math.min(G.score/300, 48);          // ~3° at start → gentle, ramps up
+      G.swingSpd = 0.010 + Math.min(G.score/400000, 0.013); // slow sway early
+    }
     const theta = Math.sin(G.t*G.swingSpd)*(G.swingAmp*Math.PI/180);
     G.potX = POT.hookX + POT.ropeLen*Math.sin(theta);
     G.potTilt = theta*0.35;
@@ -238,6 +241,11 @@ function loop(now){
   // judge settling
   for(const b of G.ingredients){
     const p=b.plugin; if(p.judged) continue;
+    // forgiving catch funnel: a descending piece near the mouth gets nudged toward center
+    if(b.velocity.y>1 && b.position.y>POT.rimY-46 && b.position.y<POT.rimY+46){
+      const dxc=G.potX-b.position.x;
+      if(Math.abs(dxc)<POT.innerHalf+72) Body.setVelocity(b,{x:b.velocity.x+dxc*0.014, y:b.velocity.y});
+    }
     const sp = Math.hypot(b.velocity.x,b.velocity.y);
     if(sp<1.4 && b.position.y>POT.rimY-140) p.slow++; else p.slow=0;
     if(p.slow>16) judge(b);
