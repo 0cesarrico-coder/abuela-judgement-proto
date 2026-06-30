@@ -23,8 +23,10 @@ const IMG = {};
 function load(name, src){ return new Promise(r=>{ const i=new Image(); i.onload=()=>{IMG[name]=i;r();}; i.onerror=()=>r(); i.src=src; }); }
 
 // ---------- audio (WebAudio synth) ----------
-let AC=null; function ac(){ if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)(); return AC; }
+let AC=null; let MUTED = localStorage.getItem('aj_muted')==='1';
+function ac(){ if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)(); return AC; }
 function blip(freq, dur, type='sine', vol=0.18, slideTo){
+  if(MUTED) return;
   try{ const a=ac(); const o=a.createOscillator(), g=a.createGain();
     o.type=type; o.frequency.value=freq; if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, a.currentTime+dur);
     g.gain.value=vol; g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime+dur);
@@ -81,11 +83,11 @@ function buildStatics(){
 
 // ---------- game state ----------
 const INGR = [
-  {key:'chile',   name:'CHILE',  col:'#D72638', val:120},
-  {key:'ajo',     name:'AJO',     col:'#Eae3d0', val:100},
-  {key:'jitomate',name:'JITOMATE',col:'#E0492f', val:130},
-  {key:'cebolla', name:'CEBOLLA', col:'#C9A4C7', val:110},
-  {key:'cilantro',name:'CILANTRO',col:'#5A8C3A', val:140},
+  {key:'chile',   name:'CHILE',  col:'#D72638', val:120, num:'7'},
+  {key:'ajo',     name:'AJO',     col:'#Eae3d0', val:100, num:'12'},
+  {key:'jitomate',name:'JITOMATE',col:'#E0492f', val:130, num:'23'},
+  {key:'cebolla', name:'CEBOLLA', col:'#C9A4C7', val:110, num:'31'},
+  {key:'cilantro',name:'CILANTRO',col:'#5A8C3A', val:140, num:'46'},
 ];
 // hand-drawn vector veg icons (always render, no emoji dependency). Draw centered at (0,0).
 function drawVeg(key,x,y,s){
@@ -133,12 +135,13 @@ function newGame(){
   G = {
     state:'play', score:0, sazon:0, sazonTier:5000, misses:0, maxMiss:3,
     t:0, swingAmp:20, swingSpd:0.018, potX:POT.x, potTilt:0,
-    ingredients:[], current:null, next:rand(INGR), particles:[], floats:[],
+    ingredients:[], current:null, next:rand(INGR), particles:[], floats:[], rings:[], steam:[],
     aiming:false, aimStart:null, aimNow:null, shake:0, hitstop:0, shots:0,
     abuelaMood:'zen', moodT:0, record: +(localStorage.getItem('aj_record')||0),
-    moneyshot:null, slowmo:1,
+    moneyshot:null, slowmo:1, flash:0, combo:0, bestCombo:0,
   };
   spawnNext();
+  track('play');
 }
 function rand(a){ return a[(Math.random()*a.length)|0]; }
 function spawnNext(){ G.current = G.next; G.next = rand(INGR); }
@@ -191,10 +194,13 @@ function judge(b){
     p.scored=true; p.counted=true;
     const add = b.plugin.it.val + Math.floor(G.combo||0)*10;
     G.score += add; G.sazon += add;
-    G.combo = (G.combo||0)+1;
+    G.combo = (G.combo||0)+1; G.bestCombo=Math.max(G.bestCombo,G.combo);
+    G.hitstop=3;                              // punch on catch
     burst(b.position.x, b.position.y, '#F2A93B', 14);
+    ring(b.position.x, b.position.y);
     floatText(b.position.x, b.position.y-30, '+'+add, '#F2A93B');
-    S.tup(); setMood('happy');
+    if(G.combo>1) floatText(b.position.x, b.position.y-58, 'COMBO x'+G.combo, '#fff');
+    G.combo>1 ? S.sparkle() : S.tup(); setMood('happy');
     if(G.sazon >= G.sazonTier){ legendario(); }
   } else {
     miss(b);
@@ -212,14 +218,16 @@ function miss(b){
 }
 function legendario(){
   G.sazonTier += 5000; G.sazon = 0; S.sparkle(); setMood('proud');
-  floatText(VW/2, 360, '¡SAZÓN LEGENDARIO!', '#fff'); G.shake=8;
+  floatText(VW/2, 360, '¡SAZÓN LEGENDARIO!', '#fff'); G.shake=10; G.flash=0.9; G.hitstop=6;
 }
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.28, s=2+Math.random()*5; G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,col,r:3+Math.random()*4}); } }
+function ring(x,y){ G.rings.push({x,y,r:8,life:1}); }
 function floatText(x,y,txt,col){ G.floats.push({x,y,txt,col,life:1}); }
 
 let last=performance.now();
 function loop(now){
   const dt = Math.min(40, now-last); last=now; if(!G){ requestAnimationFrame(loop); return; }
+  if(HIDDEN){ requestAnimationFrame(loop); return; }   // paused while tab hidden
   G.t++;
   if(G.hitstop>0){ G.hitstop--; } else {
     const ts = G.slowmo;
@@ -256,6 +264,11 @@ function loop(now){
   // particles
   for(let i=G.particles.length-1;i>=0;i--){ const q=G.particles[i]; q.x+=q.vx;q.y+=q.vy;q.vy+=0.35;q.life-=0.03; if(q.life<=0)G.particles.splice(i,1); }
   for(let i=G.floats.length-1;i>=0;i--){ const f=G.floats[i]; f.y-=1.1; f.life-=0.018; if(f.life<=0)G.floats.splice(i,1); }
+  for(let i=G.rings.length-1;i>=0;i--){ const rr=G.rings[i]; rr.r+=4; rr.life-=0.05; if(rr.life<=0)G.rings.splice(i,1); }
+  // zen steam wisps rising from the pot (ambiance)
+  if(G.state==='play' && G.t%14===0){ G.steam.push({x:G.potX+(Math.random()-0.5)*120, y:POT.rimY-6, sway:Math.random()*6.28, life:1, r:8+Math.random()*8}); }
+  for(let i=G.steam.length-1;i>=0;i--){ const w=G.steam[i]; w.y-=0.6; w.sway+=0.05; w.x+=Math.sin(w.sway)*0.5; w.life-=0.008; if(w.life<=0)G.steam.splice(i,1); }
+  if(G.flash>0)G.flash*=0.9;
   if(G.shake>0)G.shake*=0.86;
   G.moodT++; if(G.moodT>70 && G.abuelaMood!=='zen' && G.state==='play') setMood('zen');
   if(G.moneyshot) updateMoneyshot();
@@ -278,15 +291,24 @@ function draw(){
   for(const b of G.ingredients) drawIngredient(b);
   // pot front rim + handles OVER ingredients
   drawPotFront();
+  // zen steam over the rim
+  for(const w of G.steam){ ctx.globalAlpha=Math.max(0,w.life)*0.18; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(w.x,w.y,w.r*(1.4-w.life),w.r,0,0,6.28); ctx.fill(); }
+  ctx.globalAlpha=1;
   // current loader + aim
   drawLoader();
+  // catch rings
+  for(const rr of G.rings){ ctx.globalAlpha=Math.max(0,rr.life)*0.7; ctx.strokeStyle='#F2A93B'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(rr.x,rr.y,rr.r,0,6.28); ctx.stroke(); }
+  ctx.globalAlpha=1;
   // particles
   for(const q of G.particles){ ctx.globalAlpha=Math.max(0,q.life); ctx.fillStyle=q.col; ctx.beginPath(); ctx.arc(q.x,q.y,q.r,0,6.28); ctx.fill(); }
   ctx.globalAlpha=1;
+  // live combo badge near the pot
+  if(G.combo>1 && G.state==='play'){ ctx.save(); ctx.translate(G.potX, POT.rimY-150); const pop=1+0.06*Math.sin(G.t*0.5); ctx.scale(pop,pop); ctx.font='900 30px Trebuchet MS'; ctx.textAlign='center'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.strokeText('COMBO x'+G.combo,0,0); ctx.fillText('COMBO x'+G.combo,0,0); ctx.restore(); }
   // floats
   for(const f of G.floats){ ctx.globalAlpha=Math.max(0,f.life); ctx.font='900 34px Trebuchet MS'; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.fillStyle=f.col; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }
   ctx.globalAlpha=1;
   drawHUD();
+  if(G.flash>0){ ctx.globalAlpha=Math.min(0.55,G.flash); ctx.fillStyle='#FFE9A8'; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
   if(G.moneyshot) drawMoneyshot();
   ctx.restore();
 }
@@ -322,14 +344,39 @@ function drawPotFront(){
   ctx.beginPath(); ctx.arc(iw+16,-fy+24,16,-0.6,2.7); ctx.stroke();
   ctx.restore();
 }
+// ---- world-class lotería card (vector folk-art, drawn centered at origin) ----
+function loteriaCard(it){
+  // pewter-blue card base + black outline
+  ctx.fillStyle='#2A5C7A'; roundRect(-39,-48,78,96,12); ctx.fill();
+  ctx.lineWidth=5; ctx.strokeStyle='#15110e'; ctx.stroke();
+  // inner cream panel with red keyline
+  ctx.fillStyle='#F4E8CC'; roundRect(-32,-41,64,82,8); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#D72638'; roundRect(-32,-41,64,82,8); ctx.stroke();
+  // warm illustration backdrop
+  const g=ctx.createRadialGradient(0,-12,3,0,-12,34); g.addColorStop(0,it.col+'33'); g.addColorStop(1,'rgba(244,232,204,0)');
+  ctx.fillStyle=g; roundRect(-30,-39,60,52,6); ctx.fill();
+  // the ingredient illustration
+  drawVeg(it.key,0,-10,1.05);
+  // silkscreen grain (deterministic, anti-slop)
+  ctx.fillStyle='rgba(28,17,14,.05)';
+  for(let i=0;i<7;i++){ const gx=((i*53)%56)-28, gy=((i*37)%70)-39; ctx.beginPath(); ctx.arc(gx,gy,1.1,0,6.28); ctx.fill(); }
+  // lotería number badge (top-left)
+  ctx.fillStyle='#F4E8CC'; ctx.beginPath(); ctx.arc(-26,-34,8,0,6.28); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#15110e'; ctx.stroke();
+  ctx.fillStyle='#15110e'; ctx.font='900 10px Trebuchet MS'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.num,-26,-33);
+  // marigold corner dots
+  ctx.fillStyle='#F2A93B'; [[-31,-40],[31,-40],[-31,18],[31,18]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],2.4,0,6.28);ctx.fill();});
+  // name banner
+  ctx.fillStyle='#15110e'; roundRect(-32,24,64,17,5); ctx.fill();
+  ctx.fillStyle='#F4E8CC'; ctx.font='900 12px Trebuchet MS'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.name,0,33);
+  ctx.textBaseline='alphabetic';
+}
 function drawIngredient(b){
   const it=b.plugin.it; const a=b.plugin.dead?Math.max(0,(b.plugin.dead-G.t)/30):1;
-  ctx.save(); ctx.globalAlpha=a; ctx.translate(b.position.x,b.position.y); ctx.rotate(b.angle);
-  roundRect(-39,-48,78,96,14); ctx.fillStyle='#F7F0DC'; ctx.fill(); ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.stroke();
-  ctx.fillStyle=it.col+'33'; roundRect(-33,-42,66,40,8); ctx.fill();
-  drawVeg(it.key,0,-18,0.95);
-  ctx.font='900 13px Trebuchet MS'; ctx.fillStyle='#1c1714'; ctx.textAlign='center'; ctx.fillText(it.name,0,32);
-  ctx.restore(); ctx.textBaseline='alphabetic';
+  const age=G.t-(b.plugin.born||0); const sq = age<10 ? 1+0.12*(1-age/10) : 1; // launch squash juice
+  ctx.save(); ctx.globalAlpha=a; ctx.translate(b.position.x,b.position.y); ctx.rotate(b.angle); ctx.scale(1/sq, sq);
+  loteriaCard(it);
+  ctx.restore();
 }
 function drawLoader(){
   if(G.state!=='play'||!G.current) return;
@@ -364,11 +411,8 @@ function drawLoader(){
 }
 function drawCard(x,y,it,s){
   ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
-  roundRect(-39,-48,78,96,14); ctx.fillStyle='#F7F0DC'; ctx.fill(); ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.stroke();
-  ctx.fillStyle=it.col+'33'; roundRect(-33,-42,66,40,8); ctx.fill();
-  drawVeg(it.key,0,-18,0.95);
-  ctx.font='900 13px Trebuchet MS'; ctx.fillStyle='#1c1714'; ctx.textAlign='center'; ctx.fillText(it.name,0,32);
-  ctx.restore(); ctx.textBaseline='alphabetic';
+  loteriaCard(it);
+  ctx.restore();
 }
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 
@@ -398,20 +442,26 @@ function drawHUD(){
 }
 function drawAvatar(x,y,r){
   ctx.save();
-  const pulse = G.abuelaMood==='happy'?1+0.08*Math.sin(G.t*0.4): G.abuelaMood==='mad'?1.06: G.abuelaMood==='proud'?1.05:1;
+  const mad = (G.abuelaMood==='mad');
+  const pulse = G.abuelaMood==='happy'?1+0.07*Math.sin(G.t*0.4): mad?1.08: G.abuelaMood==='proud'?1.05:1+0.015*Math.sin(G.t*0.06);
   ctx.translate(x,y); ctx.scale(pulse,pulse);
   ctx.beginPath(); ctx.arc(0,0,r,0,6.28); ctx.closePath();
   ctx.fillStyle='#E2C9A0'; ctx.fill();
   ctx.save(); ctx.clip();
-  if(IMG.abuela){ const im=IMG.abuela; const s=im.width; // sample face region
-    const sx=s*0.22, sy=im.height*0.28, sw=s*0.56, sh=s*0.56;
-    ctx.drawImage(im,sx,sy,sw,sh,-r,-r-6,r*2,r*2); }
-  if(G.abuelaMood==='mad'){ ctx.fillStyle='rgba(215,38,56,.32)'; ctx.fillRect(-r,-r,r*2,r*2); }
+  const im = (mad && IMG.furia) ? IMG.furia : IMG.abuela;
+  if(im){
+    if(mad){ // cracked-glasses panic face is top-left of the moneyshot poster (real art)
+      ctx.drawImage(im, 6,6, 290,290, -r,-r-4, r*2,r*2);
+    } else { const s=im.width; ctx.drawImage(im, s*0.22, im.height*0.28, s*0.56, s*0.56, -r,-r-6, r*2,r*2); }
+  }
+  if(mad){ ctx.fillStyle='rgba(215,38,56,.20)'; ctx.fillRect(-r,-r,r*2,r*2); }
   ctx.restore();
-  ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.beginPath(); ctx.arc(0,0,r,0,6.28); ctx.stroke();
+  // pewter + marigold lotería ring
+  ctx.lineWidth=6; ctx.strokeStyle='#15110e'; ctx.beginPath(); ctx.arc(0,0,r,0,6.28); ctx.stroke();
+  ctx.lineWidth=3; ctx.strokeStyle='#2A5C7A'; ctx.beginPath(); ctx.arc(0,0,r-4,0,6.28); ctx.stroke();
   // mood emoji badge
-  const badge = G.abuelaMood==='happy'?'😊':G.abuelaMood==='mad'?'😤':G.abuelaMood==='proud'?'🥲':'👀';
-  ctx.font='26px serif'; ctx.textAlign='center'; ctx.fillText(badge,r-6,r-2);
+  const badge = G.abuelaMood==='happy'?'😊':mad?'😤':G.abuelaMood==='proud'?'🥲':'👀';
+  ctx.font='24px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(badge,r-4,r-2); ctx.textBaseline='alphabetic';
   ctx.restore();
 }
 
@@ -419,10 +469,11 @@ function drawAvatar(x,y,r){
 let camStream=null, camVideo=null;
 function startMoneyshot(){
   G.state='over'; G.slowmo=0.25; S.scratch();
+  track('gameover',{score:G.score, best:Math.max(G.record,G.score), combo:G.bestCombo, shots:G.shots});
   G.record = Math.max(G.record, G.score); localStorage.setItem('aj_record', G.record);
   G.moneyshot = { phase:'slow', t:0, crack:0, chiliX:VW/2, chiliY:200, verdict:rand(VERDICTS), cam:false };
-  // attempt camera
-  requestCam();
+  // NO camera by default — the game never takes a photo on its own. The player must opt in
+  // explicitly via a button (Style Bible §5: cámara opt-in con preview).
   setTimeout(()=>{ if(G.moneyshot) G.moneyshot.phase='crack'; S.crack(); G.shake=26; }, 520);
 }
 function requestCam(){
@@ -443,12 +494,14 @@ function drawMoneyshot(){
   ctx.lineWidth=8; ctx.strokeStyle='#F2A93B'; ctx.stroke();
   roundRect(fx,fy,fw,fh,10); ctx.save(); ctx.clip();
   if(m.cam&&camVideo&&camVideo.readyState>=2){ ctx.save(); ctx.translate(fx+fw,fy); ctx.scale(-1,1); const vr=camVideo.videoWidth/camVideo.videoHeight||1; ctx.drawImage(camVideo,0,0,fw,fh); ctx.restore(); ctx.fillStyle='rgba(242,169,59,.18)'; ctx.fillRect(fx,fy,fw,fh); }
-  else { ctx.fillStyle='#8b969d'; ctx.fillRect(fx,fy,fw,fh); ctx.font='120px serif'; ctx.textAlign='center'; ctx.fillText('😱',VW/2,fy+200); ctx.font='900 18px Trebuchet MS'; ctx.fillStyle='#fff'; ctx.fillText('TU CARA AQUÍ',VW/2,fy+fh-24); }
+  else { ctx.fillStyle='#8b969d'; ctx.fillRect(fx,fy,fw,fh); ctx.font='120px serif'; ctx.textAlign='center'; ctx.fillText('😱',VW/2,fy+200); ctx.font='900 17px Trebuchet MS'; ctx.fillStyle='#fff'; ctx.fillText('📸 OPCIONAL: TU CARA',VW/2,fy+fh-24); }
   ctx.restore(); ctx.restore();
-  // chili at impact
-  ctx.font='54px serif'; ctx.textAlign='center'; ctx.fillText('🌶️',VW/2+90,300);
+  // real Abuela FURIA bursting in (cracked cat-eye glasses, culinary panic) — beat #2
+  if(IMG.furia && m.crack>0.2){ const s=Math.min(1,(m.crack-0.2)/0.5); ctx.save(); ctx.globalAlpha=s; ctx.translate(150,150); ctx.rotate(-0.06); const fw=230; ctx.drawImage(IMG.furia, 8,8, 300,300, -fw/2,-fw/2, fw,fw); ctx.restore(); ctx.globalAlpha=1; }
+  // chile projectile at impact (vector, on-brand)
+  drawVeg('chile', VW/2+96, 300, 1.4);
   // SFX
-  ctx.save(); ctx.translate(150,250); ctx.rotate(-0.12); ctx.font='900 44px Trebuchet MS'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.strokeText('¡ZAS!',0,0); ctx.fillText('¡ZAS!',0,0); ctx.restore();
+  ctx.save(); ctx.translate(540,250); ctx.rotate(0.1); ctx.font='900 44px Trebuchet MS'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.textAlign='center'; ctx.strokeText('¡ZAS!',0,0); ctx.fillText('¡ZAS!',0,0); ctx.restore();
   // verdict banner
   const by=820; ctx.save(); ctx.translate(VW/2,by); ctx.fillStyle='#F2A93B'; roundRect(-VW/2+24,-50,VW-48,104,16); ctx.fill(); ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.stroke();
   ctx.fillStyle='#1c1714'; ctx.font='900 30px Trebuchet MS'; ctx.textAlign='center';
@@ -472,33 +525,69 @@ function showOverlayButtons(){
   ov.innerHTML=`
    <button id="b_share" style="${btn('#5A8C3A')}">📤 COMPARTIR</button>
    <button id="b_perdon" style="${btn('#F2A93B','#1c1714')}">🙏 PEDIR PERDÓN A ABUELA</button>
+   <button id="b_cam" style="background:none;border:none;color:#cfe;font-weight:800;font-size:15px;text-decoration:underline;cursor:pointer;">📸 opcional: que Abuela te vea (activa cámara)</button>
    <button id="b_retry" style="background:none;border:none;color:#eee;font-weight:800;font-size:16px;text-decoration:underline;">reintentar</button>`;
   document.body.appendChild(ov);
   document.getElementById('b_share').onclick=shareShot;
   document.getElementById('b_perdon').onclick=perdon;
   document.getElementById('b_retry').onclick=()=>{ closeOver(); newGame(); };
+  const camBtn=document.getElementById('b_cam');
+  camBtn.onclick=()=>{ track('cam_optin'); requestCam(); camBtn.textContent='📸 activando cámara…'; camBtn.style.opacity='0.6'; camBtn.disabled=true; };
 }
 function btn(bg,fg='#fff'){ return `background:${bg};color:${fg};border:4px solid #1c1714;border-radius:16px;font-weight:900;font-size:20px;padding:14px 26px;width:min(86vw,360px);box-shadow:0 5px 0 rgba(0,0,0,.35);`; }
 function closeOver(){ const o=document.getElementById('ov'); if(o)o.remove(); stopCam(); G.moneyshot=null; G.slowmo=1; }
 function stopCam(){ if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; } }
 function perdon(){ // simulated rewarded -> revive
-  closeOver(); G.misses=Math.max(0,G.misses-2); G.state='play'; G.slowmo=1; setMood('zen'); spawnNext(); S.sparkle();
+  track('perdon'); closeOver(); G.misses=Math.max(0,G.misses-2); G.state='play'; G.slowmo=1; setMood('zen'); spawnNext(); S.sparkle();
 }
 function shareShot(){
   // composite a share image at virtual res
   const off=document.createElement('canvas'); off.width=VW; off.height=VH; const o=off.getContext('2d');
   o.drawImage(cv,0,0,VW,VH);
-  // seal
-  o.fillStyle='rgba(0,0,0,.5)'; o.font='900 18px Trebuchet MS'; o.textAlign='center'; o.fillText('◆ ABUELA\'S JUDGEMENT ◆ jugá tú',VW/2,VH-20);
+  // viral seal: title + score + CTA
+  o.fillStyle='rgba(21,17,14,.82)'; o.fillRect(0,VH-96,VW,96);
+  o.fillStyle='#F2A93B'; o.font='900 32px Trebuchet MS'; o.textAlign='center'; o.fillText("ABUELA'S JUDGEMENT",VW/2,VH-58);
+  o.fillStyle='#F4E8CC'; o.font='900 22px Trebuchet MS'; o.fillText('Mi sazón: '+G.score.toLocaleString()+'  ·  ¿le aguantas? 🌶️',VW/2,VH-26);
   off.toBlob(blob=>{
     const file=new File([blob],'abuela-judgement.png',{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){ navigator.share({files:[file],title:'Abuela\'s Judgement',text:G.moneyshot.verdict.replace(/\n/g,' ')}).catch(()=>{}); }
+    track('share');
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ navigator.share({files:[file],title:'Abuela\'s Judgement',text:G.moneyshot.verdict.replace(/\n/g,' ')+' — ¿le aguantas a la Abuela? 🌶️'}).catch(()=>{}); }
     else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='abuela-judgement.png'; a.click(); }
   },'image/png');
 }
 
+// ---------- analytics (privacy-light: local counters + optional beacon) ----------
+function track(ev, data){
+  try{
+    const k='aj_stats', s=JSON.parse(localStorage.getItem(k)||'{}');
+    s[ev]=(s[ev]||0)+1; localStorage.setItem(k, JSON.stringify(s));
+    // Point window.AJ_ANALYTICS_URL at an endpoint to collect aggregate, no-PII events.
+    const url=window.AJ_ANALYTICS_URL;
+    if(url && navigator.sendBeacon){ navigator.sendBeacon(url, JSON.stringify(Object.assign({ev}, data||{}))); }
+  }catch(e){}
+}
+// ---------- UI: mute toggle ----------
+function buildMuteBtn(){
+  if(document.getElementById('mute')) return;
+  const b=document.createElement('button'); b.id='mute';
+  b.style.cssText='position:fixed;top:10px;right:10px;z-index:25;width:44px;height:44px;border-radius:12px;border:3px solid #15110e;background:rgba(20,15,11,.55);color:#F4E8CC;font-size:20px;cursor:pointer;';
+  const paint=()=>{ b.textContent = MUTED?'🔇':'🔊'; };
+  paint();
+  b.onclick=(e)=>{ e.stopPropagation(); MUTED=!MUTED; localStorage.setItem('aj_muted',MUTED?'1':'0'); paint(); if(!MUTED){ if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); S.tup(); } };
+  document.body.appendChild(b);
+}
+// ---------- pause when tab hidden / window blurred (saves battery, avoids dt jumps) ----------
+let HIDDEN=false;
+document.addEventListener('visibilitychange', ()=>{ HIDDEN=document.hidden; if(!HIDDEN){ last=performance.now(); if(AC&&AC.state==='suspended'&&!MUTED)AC.resume(); } });
+window.addEventListener('blur', ()=>{ HIDDEN=true; });
+window.addEventListener('focus', ()=>{ HIDDEN=false; last=performance.now(); });
+
 // ---------- boot ----------
-Promise.all([ load('bg','assets/kitchen-bg.png'), load('abuela','assets/abuela.png') ]).then(()=>{ buildStatics(); requestAnimationFrame(loop); });
+Promise.all([
+  load('bg','assets/kitchen-bg.png'),
+  load('abuela','assets/abuela.png'),
+  load('furia','assets/abuela-furia.png'),
+]).then(()=>{ buildStatics(); buildMuteBtn(); requestAnimationFrame(loop); });
 document.getElementById('tapstart').addEventListener('click',()=>{ document.getElementById('tapstart').classList.add('hidden'); if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); newGame(); });
 // allow keyboard restart
 window.addEventListener('keydown',e=>{ if(e.key==='r'&&G){ closeOver&&document.getElementById('ov')&&closeOver(); newGame(); } });

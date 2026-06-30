@@ -8,8 +8,10 @@ cámara frontal + veredicto spanglish + compartir). Anclado al Style Bible del d
 - **Jala** un ingrediente desde la honda (abajo) y **suéltalo** hacia la **olla que se balancea**.
 - Cada acierto **apila** y sube el **SAZÓN** (score). Combos suman extra.
 - Tienes **3 chiles (vidas)**: cada tiro que cae fuera de la olla quita uno.
-- Al **3.º fallo** → **moneyshot**: la pantalla se astilla, sale tu cara (cámara frontal) y el
-  veredicto de la Abuela. Botones: **Compartir**, **Pedir perdón** (revive) o **reintentar**.
+- Al **3.º fallo** → **moneyshot**: la pantalla se astilla, irrumpe la Abuela furiosa y suelta su
+  veredicto. Botones: **Compartir**, **Pedir perdón** (revive) o **reintentar**.
+- **Cámara = opt-in estricto:** el juego **nunca pide la cámara ni toma fotos por sí solo**. La
+  cara frontal solo aparece si el jugador toca el botón opcional "📸 que Abuela te vea".
 - Sin cronómetro: ritmo zen, sesiones de ~45s.
 
 ## Correr localmente
@@ -38,11 +40,18 @@ proto/
 ## Notas técnicas / estado
 - **Verificado** en navegador: flick→física, scoring/Sazón, conteo de vidas, moneyshot con
   cámara + fallback "sin cámara", compartir (Web Share API → fallback descarga PNG), audio WebAudio.
-- Ingredientes = **íconos vectoriales dibujados** (no emoji) → render consistente en todo dispositivo.
+- **Ingredientes = cartas de lotería vector** (borde de peltre, panel crema con keyline rojo,
+  número de lotería, flores marigold, banner, grano serigráfico) — render in-engine sin peso de
+  texturas, escala sin pérdida (Style Bible §6: el juego es vector folk-art para gama baja + carga <1.8s).
+- **Arte raster real (Nano Banana Pro) cableado:** fondo de cocina, avatar de la Abuela (zen) y
+  **Abuela furia** (lentes cat-eye agrietados + pánico) en el moneyshot (beat #2 del Style Bible).
+- **Game-feel:** squash al lanzar, hitstop al atrapar, anillos + partículas, contador de COMBO,
+  flash dorado en Sazón Legendario, vapor zen subiendo de la olla.
+- **Listo para escala/test viral:** OG/Twitter share cards, manifest PWA + íconos (instalable
+  "Añadir a inicio"), botón de mute persistente, **pausa al ocultar la pestaña** (batería), sello
+  viral en la imagen compartida (título + sazón + CTA), capa de **analítica ligera** (contadores
+  locales sin PII; configurable con `window.AJ_ANALYTICS_URL` para recolectar eventos agregados).
 - Servo de dificultad simple: la amplitud del balanceo crece con el score.
-- **Placeholder honesto:** los sprites de gameplay son vectoriales limpios; el arte final
-  (Abuela rótulo-punk, cartas de lotería) se sustituye con los assets de Nano Banana Pro
-  (ver `design/PROMPTS-nano-banana-abuelas-judgement.md`). El fondo y el avatar ya son arte real.
 
 ## Deploy (URL pública para playtest)
 GitHub Pages (https → cámara funciona):
