@@ -45,7 +45,7 @@ const engine = Engine.create(); engine.gravity.y = 1.25;
 const world = engine.world;
 
 // pot geometry (lower + wider mouth so arcs drop in easily)
-const POT = { x:VW/2, rimY:620, floorY:780, innerHalf:128, wallThk:22, hookX:VW/2, hookY:150, ropeLen:470 };
+const POT = { x:VW/2, rimY:672, floorY:744, innerHalf:140, wallThk:22, hookX:VW/2, hookY:150, ropeLen:520 };
 const counterY = 1060;
 const loader = { x:VW/2, y:1165 };
 
@@ -186,7 +186,7 @@ function setMood(m){ G.abuelaMood=m; G.moodT=0; }
 function judge(b){
   const p=b.plugin; p.judged=true;
   const inX = Math.abs(b.position.x - G.potX) < POT.innerHalf+34;
-  const inY = b.position.y < POT.floorY+24 && b.position.y > POT.rimY-90;
+  const inY = b.position.y < POT.floorY+24 && b.position.y > POT.rimY-300; // tall piles still count
   if(inX && inY){
     p.scored=true; p.counted=true;
     const add = b.plugin.it.val + Math.floor(G.combo||0)*10;
@@ -242,9 +242,9 @@ function loop(now){
   for(const b of G.ingredients){
     const p=b.plugin; if(p.judged) continue;
     // forgiving catch funnel: a descending piece near the mouth gets nudged toward center
-    if(b.velocity.y>1 && b.position.y>POT.rimY-46 && b.position.y<POT.rimY+46){
+    if(b.velocity.y>1 && b.position.y>POT.rimY-250 && b.position.y<POT.rimY+50){
       const dxc=G.potX-b.position.x;
-      if(Math.abs(dxc)<POT.innerHalf+72) Body.setVelocity(b,{x:b.velocity.x+dxc*0.014, y:b.velocity.y});
+      if(Math.abs(dxc)<POT.innerHalf+72) Body.setVelocity(b,{x:b.velocity.x+dxc*0.013, y:b.velocity.y});
     }
     const sp = Math.hypot(b.velocity.x,b.velocity.y);
     if(sp<1.4 && b.position.y>POT.rimY-140) p.slow++; else p.slow=0;
