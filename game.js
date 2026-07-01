@@ -147,23 +147,52 @@ const VERDICTS = [
   '«QUÉ CONYAS ASES, CRIATURA»',
 ];
 
+// ---------- RECETAS DE LA ABUELA (progression) ----------
+// Cook escalating dishes; each has a Sazón goal + difficulty tier. Completing one =
+// celebration + Abuela proud + recover a life, then the next (harder) dish begins.
+const RECIPES = [
+  {name:'SALSA ROJA', goal:650,  emoji:'🌶️'},
+  {name:'GUACAMOLE',  goal:1050, emoji:'🥑'},
+  {name:'PICO DE GALLO', goal:1500, emoji:'🍅'},
+  {name:'MOLE',       goal:2100, emoji:'🫕'},
+  {name:'POZOLE',     goal:2900, emoji:'🍲'},
+  {name:'TAMALES',    goal:3900, emoji:'🫔'},
+  {name:'BIRRIA',     goal:5200, emoji:'🥩'},
+];
+function recipeAt(i){
+  if(i < RECIPES.length) return RECIPES[i];
+  const n = i - RECIPES.length + 2;                    // beyond the list → endless "banquetes"
+  return {name:'BANQUETE '+n, goal:5200 + (i-RECIPES.length+1)*1600, emoji:'🎉'};
+}
+// ingredient selection with an occasional CHILE DE ORO (golden: ×3 + guaranteed combo)
+const GOLD = {key:'chile', name:'ORO', col:'#FFC53D', val:300, num:'★', gold:true};
+let _sinceGold = 0;
+function pickIngredient(){
+  _sinceGold++;
+  if(_sinceGold >= 6 && Math.random() < 0.30){ _sinceGold = 0; return GOLD; }
+  return rand(INGR);
+}
+
 let G = null;
 function newGame(){
   // clear dynamic bodies
   Composite.allBodies(world).forEach(b=>{ if(!b.isStatic) Composite.remove(world,b); });
+  _sinceGold = 0;
   G = {
-    state:'play', score:0, sazon:0, sazonTier:5000, misses:0, maxMiss:3,
+    state:'play', score:0, sazon:0, misses:0, maxMiss:3,
+    recipeIdx:0, recipe:recipeAt(0), dishesDone:0, banner:null,
     t:0, swingAmp:20, swingSpd:0.018, potX:POT.x, potTilt:0,
-    ingredients:[], current:null, next:rand(INGR), particles:[], floats:[], rings:[], steam:[],
+    ingredients:[], current:null, next:pickIngredient(), particles:[], floats:[], rings:[], steam:[],
     aiming:false, aimStart:null, aimNow:null, shake:0, hitstop:0, shots:0,
     abuelaMood:'zen', moodT:0, record: +(localStorage.getItem('aj_record')||0),
+    bestDish: +(localStorage.getItem('aj_bestdish')||0),
     moneyshot:null, slowmo:1, flash:0, combo:0, bestCombo:0,
   };
   spawnNext();
   track('play');
 }
 function rand(a){ return a[(Math.random()*a.length)|0]; }
-function spawnNext(){ G.current = G.next; G.next = rand(INGR); }
+function spawnNext(){ G.current = G.next; G.next = pickIngredient(); }
 
 // ---------- input ----------
 function toV(e){
@@ -212,16 +241,18 @@ function judge(b){
   const inY = b.position.y < POT.floorY+24 && b.position.y > POT.rimY-300; // tall piles still count
   if(inX && inY){
     p.scored=true; p.counted=true;
+    const gold = b.plugin.it.gold;
     const add = b.plugin.it.val + Math.floor(G.combo||0)*10;
     G.score += add; G.sazon += add;
     G.combo = (G.combo||0)+1; G.bestCombo=Math.max(G.bestCombo,G.combo);
-    G.hitstop=3;                              // punch on catch
-    burst(b.position.x, b.position.y, '#F2A93B', 14);
+    G.hitstop = gold?5:3;                      // punch on catch (bigger for gold)
+    burst(b.position.x, b.position.y, gold?'#FFD24D':'#F2A93B', gold?24:14);
     ring(b.position.x, b.position.y);
-    floatText(b.position.x, b.position.y-30, '+'+add, '#F2A93B');
+    floatText(b.position.x, b.position.y-30, (gold?'★ +':'+')+add, gold?'#FFD24D':'#F2A93B');
+    if(gold){ G.flash=Math.max(G.flash,0.4); S.sparkle(); }
     if(G.combo>1) floatText(b.position.x, b.position.y-58, 'COMBO x'+G.combo, '#fff');
-    G.combo>1 ? S.sparkle() : S.tup(); setMood('happy');
-    if(G.sazon >= G.sazonTier){ legendario(); }
+    (gold||G.combo>1) ? S.sparkle() : S.tup(); setMood('happy');
+    if(G.sazon >= G.recipe.goal){ recipeComplete(); }
   } else {
     miss(b);
   }
@@ -236,9 +267,17 @@ function miss(b){
   b.plugin.dead = G.t+30;
   if(G.misses >= G.maxMiss){ startMoneyshot(); }
 }
-function legendario(){
-  G.sazonTier += 5000; G.sazon = 0; S.sparkle(); setMood('proud'); playVoice('proud');
-  floatText(VW/2, 360, '¡SAZÓN LEGENDARIO!', '#fff'); G.shake=10; G.flash=0.9; G.hitstop=6;
+function recipeComplete(){
+  const done = G.recipe;
+  G.dishesDone++; G.bestDish = Math.max(G.bestDish, G.dishesDone); localStorage.setItem('aj_bestdish', G.bestDish);
+  G.recipeIdx++; G.recipe = recipeAt(G.recipeIdx); G.sazon = 0;
+  setMood('proud'); playVoice('proud'); S.sparkle();
+  G.flash = 0.9; G.shake = 10; G.hitstop = 8;
+  if(G.misses > 0){ G.misses--; floatText(VW-70, 150, '+1 🌶️', '#5A8C3A'); } // reward: recover a life
+  // celebration burst
+  for(let i=0;i<30;i++){ const a=Math.random()*6.28, s=3+Math.random()*7; G.particles.push({x:VW/2,y:420,vx:Math.cos(a)*s,vy:Math.sin(a)*s-3,life:1,col:['#F2A93B','#FFD24D','#D72638','#5A8C3A'][i%4],r:4+Math.random()*5}); }
+  G.banner = { txt:'¡'+done.name+' LISTO!', sub:'Ahora: '+G.recipe.emoji+' '+G.recipe.name, t:0 };
+  track('recipe_done', { recipe:done.name, idx:G.recipeIdx, score:G.score });
 }
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.28, s=2+Math.random()*5; G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,col,r:3+Math.random()*4}); } }
 function ring(x,y){ G.rings.push({x,y,r:8,life:1}); }
@@ -251,10 +290,11 @@ function loop(now){
   G.t++;
   if(G.hitstop>0){ G.hitstop--; } else {
     const ts = G.slowmo;
-    // DIFFICULTY RAMP: pot starts almost still (easy first level) and grows slowly with Sazón.
+    // DIFFICULTY by RECIPE: each dish swings wider & faster; gentle first dish, escalates.
     if(G.state==='play'){
-      G.swingAmp = 3 + Math.min(G.score/300, 48);          // ~3° at start → gentle, ramps up
-      G.swingSpd = 0.010 + Math.min(G.score/400000, 0.013); // slow sway early
+      const rb = G.recipeIdx;
+      G.swingAmp = Math.min(58, 4 + rb*6 + Math.min(G.score/700, 22));
+      G.swingSpd = Math.min(0.030, 0.010 + rb*0.0016 + Math.min(G.score/700000, 0.007));
     }
     const theta = Math.sin(G.t*G.swingSpd)*(G.swingAmp*Math.PI/180);
     G.potX = POT.hookX + POT.ropeLen*Math.sin(theta);
@@ -290,6 +330,7 @@ function loop(now){
   for(let i=G.steam.length-1;i>=0;i--){ const w=G.steam[i]; w.y-=0.6; w.sway+=0.05; w.x+=Math.sin(w.sway)*0.5; w.life-=0.008; if(w.life<=0)G.steam.splice(i,1); }
   if(G.flash>0)G.flash*=0.9;
   if(G.shake>0)G.shake*=0.86;
+  if(G.banner){ G.banner.t++; if(G.banner.t>150) G.banner=null; }
   G.moodT++; if(G.moodT>70 && G.abuelaMood!=='zen' && G.state==='play') setMood('zen');
   if(G.moneyshot) updateMoneyshot();
   draw();
@@ -328,8 +369,22 @@ function draw(){
   for(const f of G.floats){ ctx.globalAlpha=Math.max(0,f.life); ctx.font='900 34px Montserrat'; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.fillStyle=f.col; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }
   ctx.globalAlpha=1;
   drawHUD();
+  if(G.banner) drawBanner();
   if(G.flash>0){ ctx.globalAlpha=Math.min(0.55,G.flash); ctx.fillStyle='#FFE9A8'; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
   if(G.moneyshot) drawMoneyshot();
+  ctx.restore();
+}
+function drawBanner(){
+  const b=G.banner, t=b.t;
+  // slide-in / hold / slide-out
+  const inA=Math.min(1,t/10), outA=t>120?Math.max(0,1-(t-120)/30):1, a=inA*outA;
+  const y=430, pop=1+0.05*Math.sin(t*0.3);
+  ctx.save(); ctx.globalAlpha=a; ctx.translate(VW/2,y); ctx.scale(pop,pop);
+  // ribbon
+  ctx.fillStyle='#5A8C3A'; roundRect(-300,-46,600,92,16); ctx.fill(); ctx.lineWidth=6; ctx.strokeStyle='#15110e'; ctx.stroke();
+  ctx.fillStyle='#FFE9A8'; ctx.textAlign='center'; ctx.font='30px '+DISP; ctx.lineWidth=6; ctx.strokeStyle='#15110e';
+  ctx.strokeText(b.txt,0,-6); ctx.fillText(b.txt,0,-6);
+  ctx.font='900 20px Montserrat'; ctx.fillStyle='#fff'; ctx.strokeText(b.sub,0,26); ctx.fillText(b.sub,0,26);
   ctx.restore();
 }
 
@@ -366,17 +421,22 @@ function drawPotFront(){
 }
 // ---- world-class lotería card (vector folk-art, drawn centered at origin) ----
 function loteriaCard(it){
-  // pewter-blue card base + black outline
-  ctx.fillStyle='#2A5C7A'; roundRect(-39,-48,78,96,12); ctx.fill();
+  const gold = it.gold;
+  // card base + black outline (gold for Chile de Oro)
+  ctx.fillStyle = gold?'#C9971F':'#2A5C7A'; roundRect(-39,-48,78,96,12); ctx.fill();
   ctx.lineWidth=5; ctx.strokeStyle='#15110e'; ctx.stroke();
-  // inner cream panel with red keyline
-  ctx.fillStyle='#F4E8CC'; roundRect(-32,-41,64,82,8); ctx.fill();
-  ctx.lineWidth=2; ctx.strokeStyle='#D72638'; roundRect(-32,-41,64,82,8); ctx.stroke();
+  // inner panel + keyline
+  ctx.fillStyle = gold?'#FFF3CC':'#F4E8CC'; roundRect(-32,-41,64,82,8); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle = gold?'#B8860B':'#D72638'; roundRect(-32,-41,64,82,8); ctx.stroke();
   // warm illustration backdrop
-  const g=ctx.createRadialGradient(0,-12,3,0,-12,34); g.addColorStop(0,it.col+'33'); g.addColorStop(1,'rgba(244,232,204,0)');
+  const g=ctx.createRadialGradient(0,-12,3,0,-12,34); g.addColorStop(0,(gold?'#FFD24D':it.col)+'44'); g.addColorStop(1,'rgba(244,232,204,0)');
   ctx.fillStyle=g; roundRect(-30,-39,60,52,6); ctx.fill();
-  // the ingredient illustration
+  // the ingredient illustration (gold chile gets a golden sheen)
   drawVeg(it.key,0,-10,1.05);
+  if(gold){ ctx.globalAlpha=0.42; ctx.fillStyle='#FFC53D'; roundRect(-30,-39,60,52,6); ctx.fill(); ctx.globalAlpha=1;
+    // twinkles
+    const tw=[[-18,-30],[16,-24],[-8,4]]; ctx.fillStyle='#fff';
+    tw.forEach((p,i)=>{ const s=1.6+1.2*Math.abs(Math.sin((G?G.t:0)*0.1+i)); ctx.beginPath(); ctx.arc(p[0],p[1],s,0,6.28); ctx.fill(); }); }
   // silkscreen grain (deterministic, anti-slop)
   ctx.fillStyle='rgba(28,17,14,.05)';
   for(let i=0;i<7;i++){ const gx=((i*53)%56)-28, gy=((i*37)%70)-39; ctx.beginPath(); ctx.arc(gx,gy,1.1,0,6.28); ctx.fill(); }
@@ -387,8 +447,8 @@ function loteriaCard(it){
   // marigold corner dots
   ctx.fillStyle='#F2A93B'; [[-31,-40],[31,-40],[-31,18],[31,18]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],2.4,0,6.28);ctx.fill();});
   // name banner
-  ctx.fillStyle='#15110e'; roundRect(-32,24,64,17,5); ctx.fill();
-  ctx.fillStyle='#F4E8CC'; ctx.font='900 12px Montserrat'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.name,0,33);
+  ctx.fillStyle = gold?'#B8860B':'#15110e'; roundRect(-32,24,64,17,5); ctx.fill();
+  ctx.fillStyle = gold?'#15110e':'#F4E8CC'; ctx.font='900 12px Montserrat'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.name,0,33);
   ctx.textBaseline='alphabetic';
 }
 function drawIngredient(b){
@@ -440,18 +500,25 @@ function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w
 function drawHUD(){
   // top bar gradient
   ctx.fillStyle='rgba(20,15,11,.0)';
-  // sazon meter
-  const mx=150,my=54,mw=420,mh=26;
+  // RECIPE meter — fills toward the current dish's Sazón goal
+  const mx=150,my=60,mw=420,mh=24;
   ctx.fillStyle='rgba(0,0,0,.28)'; roundRect(mx-4,my-4,mw+8,mh+8,16); ctx.fill();
   ctx.fillStyle='#3a2c20'; roundRect(mx,my,mw,mh,12); ctx.fill();
-  const frac=Math.max(0,Math.min(1,G.sazon/G.sazonTier));
+  const frac=Math.max(0,Math.min(1,G.sazon/G.recipe.goal));
   const grd=ctx.createLinearGradient(mx,0,mx+mw,0); grd.addColorStop(0,'#F2A93B'); grd.addColorStop(1,'#ffd98a');
   ctx.fillStyle=grd; roundRect(mx,my,mw*frac,mh,12); ctx.fill();
   ctx.lineWidth=4; ctx.strokeStyle='#1c1714'; roundRect(mx,my,mw,mh,12); ctx.stroke();
-  ctx.font='900 20px Montserrat'; ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.strokeText('SAZÓN',mx,my-12); ctx.fillText('SAZÓN',mx,my-12);
-  // score
-  ctx.font='40px '+DISP; ctx.textAlign='left'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#fff';
-  ctx.strokeText(G.score.toLocaleString(),mx,140); ctx.fillText(G.score.toLocaleString(),mx,140);
+  // recipe name (left) + goal (right)
+  ctx.font='900 18px Montserrat'; ctx.textAlign='left'; ctx.lineWidth=4; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#fff';
+  const rlabel=G.recipe.emoji+' '+G.recipe.name;
+  ctx.strokeText(rlabel,mx,my-9); ctx.fillText(rlabel,mx,my-9);
+  ctx.textAlign='right'; ctx.font='900 12px Montserrat'; ctx.fillStyle='#ffe9c2';
+  ctx.strokeText(G.sazon.toLocaleString()+' / '+G.recipe.goal, mx+mw, my-9); ctx.fillText(G.sazon.toLocaleString()+' / '+G.recipe.goal, mx+mw, my-9);
+  // score + platillo counter
+  ctx.font='36px '+DISP; ctx.textAlign='left'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#fff';
+  ctx.strokeText(G.score.toLocaleString(),mx,142); ctx.fillText(G.score.toLocaleString(),mx,142);
+  ctx.font='900 14px Montserrat'; ctx.lineWidth=3; ctx.fillStyle='#ffe9c2';
+  ctx.strokeText('🍽 PLATILLO '+(G.recipeIdx+1),mx+3,164); ctx.fillText('🍽 PLATILLO '+(G.recipeIdx+1),mx+3,164);
   // abuela avatar
   drawAvatar(78,86,58);
   // misses (chiles = vidas)

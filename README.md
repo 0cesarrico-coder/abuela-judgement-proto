@@ -37,6 +37,17 @@ proto/
     └── abuela.png       # avatar (Nano Banana Pro)
 ```
 
+## Progresión — "Recetas de la Abuela" (game design)
+- El juego ya no es un lanzamiento infinito sin rumbo: cocinas **platillos que escalan**
+  (Salsa Roja → Guacamole → Pico de Gallo → Mole → Pozole → Tamales → Birria → banquetes
+  infinitos). Cada platillo tiene **meta de Sazón** y **dificultad creciente** (la olla se
+  balancea más amplio y rápido por platillo).
+- **Completar un platillo = celebración**: banner "¡[PLATILLO] LISTO!", Abuela orgullosa +
+  voz, flash dorado, y **recuperas una vida** (bucle de recompensa / comeback).
+- **Chile de Oro** (ingrediente especial dorado): aparece de vez en cuando, vale **×3** +
+  combo garantizado + destellos. Añade variedad y decisiones.
+- HUD de progresión: platillo actual + barra hacia la meta + contador de platillos + récord.
+
 ## Overhaul de clase mundial (arte · audio · UX/UI)
 - **Avatar REACTIVO con arte real (Nano Banana Pro):** set consistente de bustos de la Abuela por
   estado — zen, feliz/orgullo, watching (👀 al apuntar), furia (lentes agrietados). Anclados
