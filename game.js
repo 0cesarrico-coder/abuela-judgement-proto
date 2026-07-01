@@ -65,10 +65,11 @@ function stopAllVoice(){ Object.values(VOICE).forEach(a=>{ try{a.pause();a.curre
 const engine = Engine.create(); engine.gravity.y = 1.25;
 const world = engine.world;
 
-// pot geometry (lower + wider mouth so arcs drop in easily)
-const POT = { x:VW/2, rimY:672, floorY:744, innerHalf:140, wallThk:22, hookX:VW/2, hookY:150, ropeLen:520 };
+// BIG deep cazuela: wide mouth + real depth so round ingredients clearly fit & nestle
+const POT = { x:VW/2, rimY:628, floorY:812, innerHalf:176, wallThk:26, hookX:VW/2, hookY:148, ropeLen:470 };
+const ING_R = 38;   // ingredient radius (round bodies nestle instead of jamming like cards)
 const counterY = 1060;
-const loader = { x:VW/2, y:1165 };
+const loader = { x:VW/2, y:1170 };
 
 let leftWall, rightWall, potFloor, counter;
 function buildStatics(){
@@ -223,11 +224,12 @@ function launch(){
   if(v.mag < 12){ return; } // accidental tap
   if(v.y > -4){ return; }    // must throw upward toward the pot, not down
   const it = G.current; spawnNext();
-  const b = Bodies.rectangle(loader.x, loader.y-30, 78, 96, {restitution:0.08, friction:0.7, frictionStatic:1, chamfer:{radius:14}, density:0.0016});
+  // ROUND body → nestles in the pot instead of jamming like a rectangular card
+  const b = Bodies.circle(loader.x, loader.y-30, ING_R, {restitution:0.04, friction:0.6, frictionStatic:0.9, density:0.0016});
   b.plugin = { it, judged:false, slow:0, scored:false, counted:false, born:G.t };
   Composite.add(world, b);
   Body.setVelocity(b, { x:v.x*LAUNCH_K, y:v.y*LAUNCH_K });
-  Body.setAngularVelocity(b, (Math.random()-0.5)*0.08);
+  Body.setAngularVelocity(b, (Math.random()-0.5)*0.05);
   G.ingredients.push(b);
   G.shots++;
   S.whoosh();
@@ -277,8 +279,10 @@ function recipeComplete(){
   // celebration burst
   for(let i=0;i<30;i++){ const a=Math.random()*6.28, s=3+Math.random()*7; G.particles.push({x:VW/2,y:420,vx:Math.cos(a)*s,vy:Math.sin(a)*s-3,life:1,col:['#F2A93B','#FFD24D','#D72638','#5A8C3A'][i%4],r:4+Math.random()*5}); }
   G.banner = { txt:'¡'+done.name+' LISTO!', sub:'Ahora: '+G.recipe.emoji+' '+G.recipe.name, t:0 };
+  clearPot();   // serve the dish → fresh cazuela for the next platillo
   track('recipe_done', { recipe:done.name, idx:G.recipeIdx, score:G.score });
 }
+function clearPot(){ for(const b of G.ingredients){ if(!b.plugin.dead) b.plugin.dead = G.t+30; } } // cook-away fade
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.28, s=2+Math.random()*5; G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,col,r:3+Math.random()*4}); } }
 function ring(x,y){ G.rings.push({x,y,r:8,life:1}); }
 function floatText(x,y,txt,col){ G.floats.push({x,y,txt,col,life:1}); }
@@ -319,6 +323,9 @@ function loop(now){
     if(p.slow>16) judge(b);
     if(b.position.y>VH+120 && !p.judged) miss(b);
   }
+  // cap the pile so it never overflows/lags: oldest settled pieces "cook down" & fade
+  if(G.t%20===0){ const settled=G.ingredients.filter(b=>b.plugin.judged && !b.plugin.dead);
+    if(settled.length>13){ settled.slice(0, settled.length-13).forEach(b=>{ b.plugin.dead=G.t+26; }); } }
   // remove dead
   for(let i=G.ingredients.length-1;i>=0;i--){ const b=G.ingredients[i]; if(b.plugin.dead && G.t>b.plugin.dead){ Composite.remove(world,b); G.ingredients.splice(i,1); } }
   // particles
@@ -390,33 +397,39 @@ function drawBanner(){
 
 function drawPot(){
   ctx.save(); ctx.translate(G.potX,(POT.rimY+POT.floorY)/2); ctx.rotate(G.potTilt);
-  const iw=POT.innerHalf, fy=(POT.floorY-POT.rimY)/2+12;
-  // body
-  ctx.fillStyle='#2A5C7A'; ctx.strokeStyle='#15323f'; ctx.lineWidth=8;
+  const iw=POT.innerHalf, hh=(POT.floorY-POT.rimY)/2, topW=iw+14, rimT=-hh+12;
+  // deep rounded cazuela body
+  ctx.fillStyle='#2A5C7A'; ctx.strokeStyle='#15323f'; ctx.lineWidth=9; ctx.lineJoin='round';
   ctx.beginPath();
-  ctx.moveTo(-iw-14,-fy+18);
-  ctx.quadraticCurveTo(-iw-30,fy, 0, fy+14);
-  ctx.quadraticCurveTo(iw+30,fy, iw+14,-fy+18);
-  ctx.lineTo(iw+14,-fy+6); ctx.lineTo(-iw-14,-fy+6); ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  // inner back wall (so contents read as inside)
-  ctx.fillStyle='#1c3a4d'; ctx.beginPath(); ctx.ellipse(0,-fy+6,iw,11,0,0,6.28); ctx.fill();
+  ctx.moveTo(-topW,rimT);
+  ctx.bezierCurveTo(-iw-24,-hh*0.15, -iw-2,hh*0.66, -iw*0.5,hh+8);
+  ctx.quadraticCurveTo(0,hh+32, iw*0.5,hh+8);
+  ctx.bezierCurveTo(iw+2,hh*0.66, iw+24,-hh*0.15, topW,rimT);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // belly volume shading
+  const bg=ctx.createLinearGradient(0,rimT,0,hh+20); bg.addColorStop(0,'rgba(255,255,255,.07)'); bg.addColorStop(0.5,'rgba(0,0,0,0)'); bg.addColorStop(1,'rgba(0,0,0,.30)');
+  ctx.fillStyle=bg; ctx.fill();
+  // inner dark well at the mouth so contents clearly read as INSIDE the pot
+  ctx.fillStyle='#153541'; ctx.beginPath(); ctx.ellipse(0,rimT, topW-4, 24, 0,0,6.28); ctx.fill();
+  ctx.fillStyle='#0f2732'; ctx.beginPath(); ctx.ellipse(0,rimT+3, topW-18, 17, 0,0,6.28); ctx.fill();
   // specks on body
-  ctx.fillStyle='#1c3a4d'; [[-30,30],[40,18],[8,46]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],3,0,6.28);ctx.fill();});
+  ctx.fillStyle='#1c3a4d'; [[-46,34],[58,20],[12,66],[-24,80],[40,74]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],3.4,0,6.28);ctx.fill();});
   ctx.restore();
 }
 function drawPotFront(){
   ctx.save(); ctx.translate(G.potX,(POT.rimY+POT.floorY)/2); ctx.rotate(G.potTilt);
-  const iw=POT.innerHalf, fy=(POT.floorY-POT.rimY)/2+12;
-  // front lip (lower half of rim) over contents
-  ctx.fillStyle='#5a89a8'; ctx.lineWidth=8; ctx.strokeStyle='#15323f';
-  ctx.beginPath(); ctx.ellipse(0,-fy+6,iw+18,16,0,0,Math.PI); ctx.fill(); ctx.stroke();
-  // rim outline (full, thin) to seal the top edge
-  ctx.beginPath(); ctx.ellipse(0,-fy+6,iw+18,16,0,Math.PI,2*Math.PI); ctx.stroke();
+  const iw=POT.innerHalf, hh=(POT.floorY-POT.rimY)/2, topW=iw+14, rimT=-hh+12;
+  // thick front lip over the topmost contents
+  ctx.lineWidth=10; ctx.strokeStyle='#15323f'; ctx.fillStyle='#3f7191';
+  ctx.beginPath(); ctx.ellipse(0,rimT, topW+8, 24, 0, 0, Math.PI); ctx.fill(); ctx.stroke();
+  // back rim edge (thin, seals top)
+  ctx.beginPath(); ctx.ellipse(0,rimT, topW+8, 24, 0, Math.PI, 2*Math.PI); ctx.stroke();
+  // rim highlight
+  ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=3; ctx.beginPath(); ctx.ellipse(0,rimT-3, topW, 19, 0, 0.12*Math.PI, 0.88*Math.PI); ctx.stroke();
   // handles
-  ctx.lineWidth=7; ctx.strokeStyle='#15323f';
-  ctx.beginPath(); ctx.arc(-iw-16,-fy+24,16,0.4,3.5); ctx.stroke();
-  ctx.beginPath(); ctx.arc(iw+16,-fy+24,16,-0.6,2.7); ctx.stroke();
+  ctx.lineWidth=9; ctx.strokeStyle='#15323f';
+  ctx.beginPath(); ctx.arc(-topW-4,rimT+22,20,0.3,3.45); ctx.stroke();
+  ctx.beginPath(); ctx.arc(topW+4,rimT+22,20,-0.6,2.85); ctx.stroke();
   ctx.restore();
 }
 // ---- world-class lotería card (vector folk-art, drawn centered at origin) ----
@@ -454,9 +467,22 @@ function loteriaCard(it){
 function drawIngredient(b){
   const it=b.plugin.it; const a=b.plugin.dead?Math.max(0,(b.plugin.dead-G.t)/30):1;
   const age=G.t-(b.plugin.born||0); const sq = age<10 ? 1+0.12*(1-age/10) : 1; // launch squash juice
-  ctx.save(); ctx.globalAlpha=a; ctx.translate(b.position.x,b.position.y); ctx.rotate(b.angle); ctx.scale(1/sq, sq);
-  loteriaCard(it);
-  ctx.restore();
+  const R=ING_R, gold=it.gold, x=b.position.x, y=b.position.y;
+  // soft contact shadow under the ball
+  ctx.globalAlpha=a*0.16; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(x, y+R*0.82, R*0.92, R*0.3, 0,0,6.28); ctx.fill();
+  ctx.globalAlpha=a;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(b.angle*0.5); ctx.scale(1/sq, sq);
+  // plump round ingredient (round objects nestle cleanly in the pot — no card chaos)
+  ctx.beginPath(); ctx.arc(0,0,R,0,6.28);
+  ctx.fillStyle = gold?'#F2B705':it.col; ctx.fill();
+  const g=ctx.createRadialGradient(-R*0.32,-R*0.36,R*0.12, 0,0,R*1.1);
+  g.addColorStop(0,'rgba(255,255,255,.5)'); g.addColorStop(0.55,'rgba(255,255,255,0)'); g.addColorStop(1,'rgba(0,0,0,.20)');
+  ctx.fillStyle=g; ctx.fill();
+  ctx.lineWidth=4.5; ctx.strokeStyle='#15110e'; ctx.stroke();
+  // veggie detail on top so you can tell what it is
+  drawVeg(it.key, 0, R*0.04, 0.86);
+  if(gold){ ctx.fillStyle='#fff'; [[-R*0.5,-R*0.15],[R*0.42,R*0.12],[R*0.05,-R*0.55]].forEach((p,i)=>{ const s=1.4+1.3*Math.abs(Math.sin(G.t*0.12+i*2)); ctx.beginPath(); ctx.arc(p[0],p[1],s,0,6.28); ctx.fill(); }); }
+  ctx.restore(); ctx.globalAlpha=1;
 }
 function drawLoader(){
   if(G.state!=='play'||!G.current) return;
