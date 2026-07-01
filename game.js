@@ -3,6 +3,9 @@
    Core loop: slingshot ingredients into a swinging pot, stack Sazón, don't anger Abuela. */
 'use strict';
 const { Engine, Bodies, Body, Composite } = Matter;
+// Fonts (loaded via Google Fonts in index.html). UI = Montserrat grotesk; DISP = Bungee rótulo.
+const UIF = "Montserrat, 'Segoe UI', sans-serif";
+const DISP = "Bungee, 'Montserrat', sans-serif";
 
 // ---------- virtual resolution ----------
 const VW = 720, VH = 1280;
@@ -41,6 +44,22 @@ const S = {
   sparkle:()=>{[660,880,1175,1568].forEach((f,i)=>setTimeout(()=>blip(f,0.14,'triangle',0.16),i*70));},
   scratch:()=>{blip(400,0.25,'sawtooth',0.2,60);},
 };
+
+// ---------- music + Abuela voice (real generated audio; fully mutable) ----------
+// NOTE: música y voz fueron generadas con Higgsfield (Sonilo / TTS). Verificar de oído.
+let MUSIC=null, MUSIC_VOL=0.38; const VOICE={}; let VOICE_ON = localStorage.getItem('aj_voice')!=='0';
+function initAudioFiles(){
+  try{
+    MUSIC = new Audio('assets/audio/music-zen.m4a'); MUSIC.loop=true; MUSIC.volume=0; MUSIC.preload='auto';
+    ['v0','v1','v2','v3','v4','proud'].forEach(k=>{ const a=new Audio('assets/audio/'+k+'.mp3'); a.preload='auto'; a.volume=0.95; VOICE[k]=a; });
+  }catch(e){}
+}
+let _mfade=null;
+function fadeMusic(to){ if(!MUSIC) return; clearInterval(_mfade); _mfade=setInterval(()=>{ const v=MUSIC.volume; if(Math.abs(v-to)<0.03){ MUSIC.volume=to; clearInterval(_mfade); if(to===0)MUSIC.pause(); return;} MUSIC.volume=v+(to>v?0.03:-0.03); },70); }
+function startMusic(){ if(!MUSIC||MUTED) return; MUSIC.play().then(()=>fadeMusic(MUSIC_VOL)).catch(()=>{}); }
+function stopMusic(){ if(MUSIC){ MUSIC.pause(); } }
+function playVoice(k){ if(MUTED||!VOICE_ON) return; const a=VOICE[k]; if(!a) return; try{ a.currentTime=0; a.play().catch(()=>{}); }catch(e){}; if(MUSIC&&!MUSIC.paused){ MUSIC.volume=0.12; setTimeout(()=>{ if(MUSIC&&!MUSIC.paused)fadeMusic(MUSIC_VOL); },2600); } }
+function stopAllVoice(){ Object.values(VOICE).forEach(a=>{ try{a.pause();a.currentTime=0;}catch(e){} }); }
 
 // ---------- physics ----------
 const engine = Engine.create(); engine.gravity.y = 1.25;
@@ -154,7 +173,8 @@ function toV(e){
   return { x: cx/r.width*VW, y: cy/r.height*VH };
 }
 function down(e){ e.preventDefault(); if(!G||G.state!=='play'||!G.current) return; if(AC&&AC.state==='suspended')AC.resume();
-  const p=toV(e); G.aiming=true; G.aimStart={x:loader.x,y:loader.y}; G.aimNow=p; }
+  const p=toV(e); G.aiming=true; G.aimStart={x:loader.x,y:loader.y}; G.aimNow=p;
+  if(G.abuelaMood==='zen') setMood('watch'); }
 function move(e){ if(!G||!G.aiming) return; e.preventDefault(); G.aimNow=toV(e); }
 function up(e){ if(!G||!G.aiming) return; e.preventDefault(); G.aiming=false; launch(); }
 cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
@@ -217,7 +237,7 @@ function miss(b){
   if(G.misses >= G.maxMiss){ startMoneyshot(); }
 }
 function legendario(){
-  G.sazonTier += 5000; G.sazon = 0; S.sparkle(); setMood('proud');
+  G.sazonTier += 5000; G.sazon = 0; S.sparkle(); setMood('proud'); playVoice('proud');
   floatText(VW/2, 360, '¡SAZÓN LEGENDARIO!', '#fff'); G.shake=10; G.flash=0.9; G.hitstop=6;
 }
 function burst(x,y,col,n){ for(let i=0;i<n;i++){ const a=Math.random()*6.28, s=2+Math.random()*5; G.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,col,r:3+Math.random()*4}); } }
@@ -303,9 +323,9 @@ function draw(){
   for(const q of G.particles){ ctx.globalAlpha=Math.max(0,q.life); ctx.fillStyle=q.col; ctx.beginPath(); ctx.arc(q.x,q.y,q.r,0,6.28); ctx.fill(); }
   ctx.globalAlpha=1;
   // live combo badge near the pot
-  if(G.combo>1 && G.state==='play'){ ctx.save(); ctx.translate(G.potX, POT.rimY-150); const pop=1+0.06*Math.sin(G.t*0.5); ctx.scale(pop,pop); ctx.font='900 30px Trebuchet MS'; ctx.textAlign='center'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.strokeText('COMBO x'+G.combo,0,0); ctx.fillText('COMBO x'+G.combo,0,0); ctx.restore(); }
+  if(G.combo>1 && G.state==='play'){ ctx.save(); ctx.translate(G.potX, POT.rimY-150); const pop=1+0.06*Math.sin(G.t*0.5); ctx.scale(pop,pop); ctx.font='26px '+DISP; ctx.textAlign='center'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.strokeText('COMBO x'+G.combo,0,0); ctx.fillText('COMBO x'+G.combo,0,0); ctx.restore(); }
   // floats
-  for(const f of G.floats){ ctx.globalAlpha=Math.max(0,f.life); ctx.font='900 34px Trebuchet MS'; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.fillStyle=f.col; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }
+  for(const f of G.floats){ ctx.globalAlpha=Math.max(0,f.life); ctx.font='900 34px Montserrat'; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#1c1714'; ctx.fillStyle=f.col; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }
   ctx.globalAlpha=1;
   drawHUD();
   if(G.flash>0){ ctx.globalAlpha=Math.min(0.55,G.flash); ctx.fillStyle='#FFE9A8'; ctx.fillRect(0,0,VW,VH); ctx.globalAlpha=1; }
@@ -363,12 +383,12 @@ function loteriaCard(it){
   // lotería number badge (top-left)
   ctx.fillStyle='#F4E8CC'; ctx.beginPath(); ctx.arc(-26,-34,8,0,6.28); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#15110e'; ctx.stroke();
-  ctx.fillStyle='#15110e'; ctx.font='900 10px Trebuchet MS'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.num,-26,-33);
+  ctx.fillStyle='#15110e'; ctx.font='900 10px Montserrat'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.num,-26,-33);
   // marigold corner dots
   ctx.fillStyle='#F2A93B'; [[-31,-40],[31,-40],[-31,18],[31,18]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],2.4,0,6.28);ctx.fill();});
   // name banner
   ctx.fillStyle='#15110e'; roundRect(-32,24,64,17,5); ctx.fill();
-  ctx.fillStyle='#F4E8CC'; ctx.font='900 12px Trebuchet MS'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.name,0,33);
+  ctx.fillStyle='#F4E8CC'; ctx.font='900 12px Montserrat'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(it.name,0,33);
   ctx.textBaseline='alphabetic';
 }
 function drawIngredient(b){
@@ -401,11 +421,11 @@ function drawLoader(){
   }
   // next preview
   ctx.globalAlpha=.85; drawCard(VW-70,loader.y,G.next,0.62); ctx.globalAlpha=1;
-  ctx.font='900 13px Trebuchet MS'; ctx.fillStyle='#1c1714aa'; ctx.textAlign='center'; ctx.fillText('SIGUE',VW-70,loader.y-44);
+  ctx.font='900 13px Montserrat'; ctx.fillStyle='#1c1714aa'; ctx.textAlign='center'; ctx.fillText('SIGUE',VW-70,loader.y-44);
   // first-shot hint
   if(G.shots===0 && !G.aiming){
     const a=0.55+0.35*Math.sin(G.t*0.12);
-    ctx.globalAlpha=a; ctx.font='900 22px Trebuchet MS'; ctx.fillStyle='#1c1714'; ctx.textAlign='center';
+    ctx.globalAlpha=a; ctx.font='900 22px Montserrat'; ctx.fillStyle='#1c1714'; ctx.textAlign='center';
     ctx.fillText('👆 jala y suelta hacia la olla', VW/2, loader.y-70); ctx.globalAlpha=1;
   }
 }
@@ -428,9 +448,9 @@ function drawHUD(){
   const grd=ctx.createLinearGradient(mx,0,mx+mw,0); grd.addColorStop(0,'#F2A93B'); grd.addColorStop(1,'#ffd98a');
   ctx.fillStyle=grd; roundRect(mx,my,mw*frac,mh,12); ctx.fill();
   ctx.lineWidth=4; ctx.strokeStyle='#1c1714'; roundRect(mx,my,mw,mh,12); ctx.stroke();
-  ctx.font='900 20px Trebuchet MS'; ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.strokeText('SAZÓN',mx,my-12); ctx.fillText('SAZÓN',mx,my-12);
+  ctx.font='900 20px Montserrat'; ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.strokeText('SAZÓN',mx,my-12); ctx.fillText('SAZÓN',mx,my-12);
   // score
-  ctx.font='900 46px Trebuchet MS'; ctx.textAlign='left'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#fff';
+  ctx.font='40px '+DISP; ctx.textAlign='left'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#fff';
   ctx.strokeText(G.score.toLocaleString(),mx,140); ctx.fillText(G.score.toLocaleString(),mx,140);
   // abuela avatar
   drawAvatar(78,86,58);
@@ -438,30 +458,29 @@ function drawHUD(){
   for(let i=0;i<G.maxMiss;i++){ ctx.globalAlpha = i<(G.maxMiss-G.misses)?1:0.16; drawVeg('chile', VW-34-i*42, 122, 0.62); }
   ctx.globalAlpha=1;
   // record
-  ctx.textAlign='right'; ctx.font='900 16px Trebuchet MS'; ctx.fillStyle='#1c1714aa'; ctx.fillText('RÉCORD '+G.record.toLocaleString(),VW-20,184);
+  ctx.textAlign='right'; ctx.font='900 16px Montserrat'; ctx.fillStyle='#1c1714aa'; ctx.fillText('RÉCORD '+G.record.toLocaleString(),VW-20,184);
 }
 function drawAvatar(x,y,r){
   ctx.save();
-  const mad = (G.abuelaMood==='mad');
-  const pulse = G.abuelaMood==='happy'?1+0.07*Math.sin(G.t*0.4): mad?1.08: G.abuelaMood==='proud'?1.05:1+0.015*Math.sin(G.t*0.06);
+  const mood=G.abuelaMood, mad=(mood==='mad');
+  const pulse = mood==='happy'?1+0.07*Math.sin(G.t*0.4): mad?1.07: mood==='proud'?1.05: mood==='watch'?1.02 : 1+0.015*Math.sin(G.t*0.06);
   ctx.translate(x,y); ctx.scale(pulse,pulse);
   ctx.beginPath(); ctx.arc(0,0,r,0,6.28); ctx.closePath();
-  ctx.fillStyle='#E2C9A0'; ctx.fill();
+  ctx.fillStyle='#C9743B'; ctx.fill();   // warm backing matching bust bg
   ctx.save(); ctx.clip();
-  const im = (mad && IMG.furia) ? IMG.furia : IMG.abuela;
-  if(im){
-    if(mad){ // cracked-glasses panic face is top-left of the moneyshot poster (real art)
-      ctx.drawImage(im, 6,6, 290,290, -r,-r-4, r*2,r*2);
-    } else { const s=im.width; ctx.drawImage(im, s*0.22, im.height*0.28, s*0.56, s*0.56, -r,-r-6, r*2,r*2); }
-  }
-  if(mad){ ctx.fillStyle='rgba(215,38,56,.20)'; ctx.fillRect(-r,-r,r*2,r*2); }
+  // reactive mood bust (real Nano Banana Pro art, consistent character set)
+  const im = (mood==='happy'||mood==='proud') ? IMG.mhappy : mad ? IMG.mfuria : mood==='watch' ? IMG.mwatch : IMG.mzen;
+  if(im){ ctx.drawImage(im, 44,8, 300,300, -r,-r, r*2,r*2); }
+  else if(mad && IMG.furia){ ctx.drawImage(IMG.furia, 6,6, 290,290, -r,-r-4, r*2,r*2); }
+  else if(IMG.abuela){ const s=IMG.abuela.width; ctx.drawImage(IMG.abuela, s*0.22, IMG.abuela.height*0.28, s*0.56, s*0.56, -r,-r-6, r*2,r*2); }
+  if(mad){ ctx.fillStyle='rgba(215,38,56,.12)'; ctx.fillRect(-r,-r,r*2,r*2); }
   ctx.restore();
   // pewter + marigold lotería ring
   ctx.lineWidth=6; ctx.strokeStyle='#15110e'; ctx.beginPath(); ctx.arc(0,0,r,0,6.28); ctx.stroke();
   ctx.lineWidth=3; ctx.strokeStyle='#2A5C7A'; ctx.beginPath(); ctx.arc(0,0,r-4,0,6.28); ctx.stroke();
   // mood emoji badge
-  const badge = G.abuelaMood==='happy'?'😊':mad?'😤':G.abuelaMood==='proud'?'🥲':'👀';
-  ctx.font='24px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(badge,r-4,r-2); ctx.textBaseline='alphabetic';
+  const badge = mood==='happy'?'😊':mad?'😤':mood==='proud'?'🥲':mood==='watch'?'🤨':'👀';
+  ctx.font='22px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(badge,r-4,r-2); ctx.textBaseline='alphabetic';
   ctx.restore();
 }
 
@@ -471,10 +490,11 @@ function startMoneyshot(){
   G.state='over'; G.slowmo=0.25; S.scratch();
   track('gameover',{score:G.score, best:Math.max(G.record,G.score), combo:G.bestCombo, shots:G.shots});
   G.record = Math.max(G.record, G.score); localStorage.setItem('aj_record', G.record);
-  G.moneyshot = { phase:'slow', t:0, crack:0, chiliX:VW/2, chiliY:200, verdict:rand(VERDICTS), cam:false };
+  const vi = (Math.random()*Math.min(VERDICTS.length,5))|0;   // verdict index maps to voice v0..v4
+  G.moneyshot = { phase:'slow', t:0, crack:0, chiliX:VW/2, chiliY:200, verdict:VERDICTS[vi], vi, cam:false };
   // NO camera by default — the game never takes a photo on its own. The player must opt in
   // explicitly via a button (Style Bible §5: cámara opt-in con preview).
-  setTimeout(()=>{ if(G.moneyshot) G.moneyshot.phase='crack'; S.crack(); G.shake=26; }, 520);
+  setTimeout(()=>{ if(!G.moneyshot) return; G.moneyshot.phase='crack'; S.crack(); G.shake=26; playVoice('v'+vi); }, 520);
 }
 function requestCam(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) return;
@@ -494,17 +514,17 @@ function drawMoneyshot(){
   ctx.lineWidth=8; ctx.strokeStyle='#F2A93B'; ctx.stroke();
   roundRect(fx,fy,fw,fh,10); ctx.save(); ctx.clip();
   if(m.cam&&camVideo&&camVideo.readyState>=2){ ctx.save(); ctx.translate(fx+fw,fy); ctx.scale(-1,1); const vr=camVideo.videoWidth/camVideo.videoHeight||1; ctx.drawImage(camVideo,0,0,fw,fh); ctx.restore(); ctx.fillStyle='rgba(242,169,59,.18)'; ctx.fillRect(fx,fy,fw,fh); }
-  else { ctx.fillStyle='#8b969d'; ctx.fillRect(fx,fy,fw,fh); ctx.font='120px serif'; ctx.textAlign='center'; ctx.fillText('😱',VW/2,fy+200); ctx.font='900 17px Trebuchet MS'; ctx.fillStyle='#fff'; ctx.fillText('📸 OPCIONAL: TU CARA',VW/2,fy+fh-24); }
+  else { ctx.fillStyle='#8b969d'; ctx.fillRect(fx,fy,fw,fh); ctx.font='120px serif'; ctx.textAlign='center'; ctx.fillText('😱',VW/2,fy+200); ctx.font='900 17px Montserrat'; ctx.fillStyle='#fff'; ctx.fillText('📸 OPCIONAL: TU CARA',VW/2,fy+fh-24); }
   ctx.restore(); ctx.restore();
   // real Abuela FURIA bursting in (cracked cat-eye glasses, culinary panic) — beat #2
   if(IMG.furia && m.crack>0.2){ const s=Math.min(1,(m.crack-0.2)/0.5); ctx.save(); ctx.globalAlpha=s; ctx.translate(150,150); ctx.rotate(-0.06); const fw=230; ctx.drawImage(IMG.furia, 8,8, 300,300, -fw/2,-fw/2, fw,fw); ctx.restore(); ctx.globalAlpha=1; }
   // chile projectile at impact (vector, on-brand)
   drawVeg('chile', VW/2+96, 300, 1.4);
   // SFX
-  ctx.save(); ctx.translate(540,250); ctx.rotate(0.1); ctx.font='900 44px Trebuchet MS'; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.textAlign='center'; ctx.strokeText('¡ZAS!',0,0); ctx.fillText('¡ZAS!',0,0); ctx.restore();
+  ctx.save(); ctx.translate(540,250); ctx.rotate(0.1); ctx.font='40px '+DISP; ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.fillStyle='#F2A93B'; ctx.textAlign='center'; ctx.strokeText('¡ZAS!',0,0); ctx.fillText('¡ZAS!',0,0); ctx.restore();
   // verdict banner
   const by=820; ctx.save(); ctx.translate(VW/2,by); ctx.fillStyle='#F2A93B'; roundRect(-VW/2+24,-50,VW-48,104,16); ctx.fill(); ctx.lineWidth=6; ctx.strokeStyle='#1c1714'; ctx.stroke();
-  ctx.fillStyle='#1c1714'; ctx.font='900 30px Trebuchet MS'; ctx.textAlign='center';
+  ctx.fillStyle='#1c1714'; ctx.font='22px '+DISP; ctx.textAlign='center';
   m.verdict.split('\n').forEach((ln,i)=>ctx.fillText(ln,0,-2+i*34));
   ctx.restore();
 }
@@ -546,8 +566,8 @@ function shareShot(){
   o.drawImage(cv,0,0,VW,VH);
   // viral seal: title + score + CTA
   o.fillStyle='rgba(21,17,14,.82)'; o.fillRect(0,VH-96,VW,96);
-  o.fillStyle='#F2A93B'; o.font='900 32px Trebuchet MS'; o.textAlign='center'; o.fillText("ABUELA'S JUDGEMENT",VW/2,VH-58);
-  o.fillStyle='#F4E8CC'; o.font='900 22px Trebuchet MS'; o.fillText('Mi sazón: '+G.score.toLocaleString()+'  ·  ¿le aguantas? 🌶️',VW/2,VH-26);
+  o.fillStyle='#F2A93B'; o.font='900 32px Montserrat'; o.textAlign='center'; o.fillText("ABUELA'S JUDGEMENT",VW/2,VH-58);
+  o.fillStyle='#F4E8CC'; o.font='900 22px Montserrat'; o.fillText('Mi sazón: '+G.score.toLocaleString()+'  ·  ¿le aguantas? 🌶️',VW/2,VH-26);
   off.toBlob(blob=>{
     const file=new File([blob],'abuela-judgement.png',{type:'image/png'});
     track('share');
@@ -573,21 +593,32 @@ function buildMuteBtn(){
   b.style.cssText='position:fixed;top:10px;right:10px;z-index:25;width:44px;height:44px;border-radius:12px;border:3px solid #15110e;background:rgba(20,15,11,.55);color:#F4E8CC;font-size:20px;cursor:pointer;';
   const paint=()=>{ b.textContent = MUTED?'🔇':'🔊'; };
   paint();
-  b.onclick=(e)=>{ e.stopPropagation(); MUTED=!MUTED; localStorage.setItem('aj_muted',MUTED?'1':'0'); paint(); if(!MUTED){ if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); S.tup(); } };
+  b.onclick=(e)=>{ e.stopPropagation(); MUTED=!MUTED; localStorage.setItem('aj_muted',MUTED?'1':'0'); paint();
+    if(MUTED){ stopMusic(); stopAllVoice(); }
+    else { if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); startMusic(); S.tup(); } };
   document.body.appendChild(b);
 }
 // ---------- pause when tab hidden / window blurred (saves battery, avoids dt jumps) ----------
 let HIDDEN=false;
-document.addEventListener('visibilitychange', ()=>{ HIDDEN=document.hidden; if(!HIDDEN){ last=performance.now(); if(AC&&AC.state==='suspended'&&!MUTED)AC.resume(); } });
+document.addEventListener('visibilitychange', ()=>{ HIDDEN=document.hidden;
+  if(HIDDEN){ stopMusic(); }
+  else { last=performance.now(); if(AC&&AC.state==='suspended'&&!MUTED)AC.resume(); if(!MUTED&&G&&G.state)startMusic(); } });
 window.addEventListener('blur', ()=>{ HIDDEN=true; });
 window.addEventListener('focus', ()=>{ HIDDEN=false; last=performance.now(); });
 
 // ---------- boot ----------
+initAudioFiles();
+const fontsReady = (document.fonts&&document.fonts.ready) ? document.fonts.ready.catch(()=>{}) : Promise.resolve();
 Promise.all([
-  load('bg','assets/kitchen-bg.png'),
-  load('abuela','assets/abuela.png'),
-  load('furia','assets/abuela-furia.png'),
+  load('bg','assets/kitchen-bg2.png'),     // gameplay-optimized kitchen (calm center, vignette)
+  load('abuela','assets/abuela.png'),       // title/poster + fallback
+  load('furia','assets/abuela-furia.png'),  // moneyshot poster art
+  load('mzen','assets/m-zen.png'),          // reactive avatar busts
+  load('mhappy','assets/m-happy.png'),
+  load('mwatch','assets/m-watch.png'),
+  load('mfuria','assets/m-furia.png'),
+  fontsReady,
 ]).then(()=>{ buildStatics(); buildMuteBtn(); requestAnimationFrame(loop); });
-document.getElementById('tapstart').addEventListener('click',()=>{ document.getElementById('tapstart').classList.add('hidden'); if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); newGame(); });
+document.getElementById('tapstart').addEventListener('click',()=>{ document.getElementById('tapstart').classList.add('hidden'); if(!AC)ac(); if(AC&&AC.state==='suspended')AC.resume(); startMusic(); newGame(); });
 // allow keyboard restart
 window.addEventListener('keydown',e=>{ if(e.key==='r'&&G){ closeOver&&document.getElementById('ov')&&closeOver(); newGame(); } });

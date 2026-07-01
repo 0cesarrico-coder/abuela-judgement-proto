@@ -26,28 +26,38 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Abuela's Judgement">
 <meta name="mobile-web-app-capable" content="yes">
+
+<!-- Fonts: Montserrat (UI grotesk) + Bungee (rótulo display) per Style Bible -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;background:#15110e;overflow:hidden;font-family:'Trebuchet MS','Segoe UI',sans-serif;
+  html,body{height:100%;background:#15110e;overflow:hidden;font-family:'Montserrat','Segoe UI',sans-serif;
     touch-action:none;overscroll-behavior:none;}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
   #game{display:block;background:#0a0807;box-shadow:0 0 60px rgba(0,0,0,.7);}
-  #tapstart{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    background:radial-gradient(circle at 50% 40%,#3a2c20,#140f0b);color:#F2A93B;text-align:center;cursor:pointer;}
-  #tapstart h1{font-size:9vw;font-weight:900;color:#F2A93B;text-shadow:3px 3px 0 #C8341F,5px 5px 0 #1c1714;letter-spacing:1px;line-height:1;}
-  #tapstart .pill{margin-top:7vh;background:#C8341F;border:4px solid #1c1714;border-radius:18px;padding:14px 30px;
-    color:#fff;font-weight:900;font-size:5vw;box-shadow:0 6px 0 rgba(0,0,0,.4);animation:bob 1.2s ease-in-out infinite;}
-  #tapstart p{margin-top:3vh;color:#e8d2a8;font-size:3.6vw;opacity:.85;max-width:80vw;}
-  @keyframes bob{50%{transform:translateY(-7px);}}
+  /* Title screen: real poster art as the hero, pill + subtitle over a warm gradient */
+  #tapstart{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    background:#140f0b center/cover no-repeat url('assets/abuela.png');cursor:pointer;overflow:hidden;}
+  #tapstart::before{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,rgba(20,15,11,0) 38%,rgba(20,15,11,.35) 64%,rgba(20,15,11,.92) 100%);}
+  #tapstart .cta{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;padding-bottom:8vh;}
+  #tapstart .pill{font-family:'Bungee',sans-serif;background:#C8341F;border:4px solid #15110e;border-radius:18px;padding:16px 34px;
+    color:#fff;font-size:6.2vw;letter-spacing:.5px;box-shadow:0 6px 0 rgba(0,0,0,.45);animation:bob 1.2s ease-in-out infinite;}
+  #tapstart p{margin-top:3.2vh;color:#f3e4c6;font-weight:800;font-size:3.7vw;opacity:.95;max-width:84vw;text-align:center;
+    text-shadow:0 2px 6px rgba(0,0,0,.8);line-height:1.35;}
+  @media(min-width:560px){ #tapstart .pill{font-size:34px;} #tapstart p{font-size:18px;} }
+  @keyframes bob{50%{transform:translateY(-8px);}}
   .hidden{display:none!important;}
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="game"></canvas></div>
 <div id="tapstart">
-  <h1>ABUELA'S<br>JUDGEMENT</h1>
-  <div class="pill">▶ TOCA PARA JUGAR</div>
-  <p>Lanza los ingredientes a la olla con un tiro de honda.<br>Apila el Sazón… y no hagas enojar a la Abuela.</p>
+  <div class="cta">
+    <div class="pill">▶ TOCA PARA JUGAR</div>
+    <p>Jala los ingredientes a la olla y apila el SAZÓN.<br>Si fallas 3 veces… la Abuela te juzga. 🌶️</p>
+  </div>
 </div>
 <script src="matter.min.js"></script>
 <script src="game.js"></script>

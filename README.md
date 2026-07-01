@@ -37,6 +37,19 @@ proto/
     └── abuela.png       # avatar (Nano Banana Pro)
 ```
 
+## Overhaul de clase mundial (arte · audio · UX/UI)
+- **Avatar REACTIVO con arte real (Nano Banana Pro):** set consistente de bustos de la Abuela por
+  estado — zen, feliz/orgullo, watching (👀 al apuntar), furia (lentes agrietados). Anclados
+  image-to-image para identidad idéntica.
+- **Fondo de gameplay dedicado:** cocina cálida compuesta para jugar (viga+gancho arriba, centro
+  limpio para el péndulo, banda de Talavera, repisa) — reemplaza el póster ocupado.
+- **Tipografía real (Style Bible):** **Bungee** (rótulo display: título, score, veredicto, ¡ZAS!,
+  combo) + **Montserrat** (UI). Cargadas vía Google Fonts, con `document.fonts.ready` antes del render.
+- **Título premium:** el póster de la Abuela como héroe + pill Bungee + gradiente.
+- **Audio (generado con Higgsfield):** música zen en loop (Sonilo) con fade y ducking; **voz de la
+  Abuela** (TTS) que dice el veredicto en el moneyshot + línea de orgullo en Sazón Legendario.
+  Controlado por el botón de mute; se pausa al ocultar la pestaña. ⚠️ *Verificar de oído.*
+
 ## Notas técnicas / estado
 - **Verificado** en navegador: flick→física, scoring/Sazón, conteo de vidas, moneyshot con
   cámara + fallback "sin cámara", compartir (Web Share API → fallback descarga PNG), audio WebAudio.
